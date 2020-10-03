@@ -16,20 +16,26 @@
 
 set -e
 
-source $(dirname ${BASH_SOURCE})/common.sh
+export TRACE=1
 
-header_text "running go test"
+# TODO: are these on by default on the golang docker image?
+export PATH=$(go env GOPATH)/bin:$PATH
+mkdir -p $(go env GOPATH)/bin
 
-# NB(directxman12): -p is *not* -parallel
-#
-# -p runs different suites in parallel, which should be a net speedup because
-# suites don't share resources
-#
-# -parallel doesn't work with ginkgo, but the equivalent ginkgo command is
-# actually a net slowdown because it tries to run specs in parallel and we
-# suffer from extra bootup time from envtest.
-go test -race ${MOD_OPT} -p=4 ./...
+set -o errexit
+set -o nounset
+set -o pipefail
 
-if [[ -n ${ARTIFACTS:-} ]]; then
-  if grep -Rin '<failure type="Failure">' ${ARTIFACTS}/*; then exit 1; fi
-fi
+hack_dir=$(dirname ${BASH_SOURCE})
+source ${hack_dir}/common.sh
+source ${hack_dir}/setup-envtest.sh
+
+ENVTEST_K8S_VERSION=${KUBE_VER?must set KUBE_VER (env.kube-ver in workflow YAML)}
+
+${hack_dir}/ci-fetch-envtest.sh
+setup_envtest_env "${ENVTEST_UTILS_PATH}"
+
+# success or failure is determined by the next step, always exit success
+set +o pipefail
+( ${hack_dir}/test-all.sh ) || exit 0
+set -o pipefail
